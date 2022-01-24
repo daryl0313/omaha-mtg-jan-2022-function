@@ -5,16 +5,20 @@ using System;
 using Google.Cloud.Vision.V1;
 using Google.Cloud.TextToSpeech.V1;
 using Google.Protobuf;
-using System.Text;
 using System.Linq;
 using System.IO;
 using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
+using Google.Cloud.AutoML.V1;
+using System.Net.Http;
 
 namespace DotnetGcf
 {
     public class Function : IHttpFunction
     {
+        private const string projectId = "omaha-mtg-presentation";
+        private const string locationId = "us-central1";
+        private const string modelId = "ICN6818430044629630976";
+
         /// <summary>
         /// Logic for your function goes here.
         /// </summary>
@@ -23,104 +27,104 @@ namespace DotnetGcf
         [RequestFormLimits(ValueLengthLimit = int.MaxValue, MultipartBodyLengthLimit = int.MaxValue)]
         public async Task HandleAsync(HttpContext context)
         {
-            Image image = await GetImage(context.Request, "image");
-            if (image == null)
+            var predictionImage = await GetPredictionImage(context.Request, "image");
+            if (predictionImage == null)
             {
                 context.Response.StatusCode = 400;
                 await context.Response.WriteAsync("\"image\" is required for this request");
                 return;
             }
-
-            // var builder = new ImageAnnotatorClientBuilder();
-            // builder.CredentialsPath = "key.json";
-            // builder.Endpoint = "https://automl.googleapis.com/v1beta1/projects/922566573636/locations/us-central1/models/ICN6818430044629630976:predict";
-            // var client = await builder.BuildAsync();
-            var client = await ImageAnnotatorClient.CreateAsync();
-            var labels = await client.DetectLabelsAsync(image);
-
-            Console.WriteLine("Labels (and confidence score):");
-            Console.WriteLine(new String('=', 30));
-
-            var labelResponses = new List<string>();
-            foreach (var label in labels)
+            var client = await PredictionServiceClient.CreateAsync();
+            PredictRequest request = new PredictRequest
             {
-                string labelResponse = $"{label.Description} ({(int)(label.Score * 100)}%)";
-                Console.WriteLine(labelResponse);
-                labelResponses.Add(labelResponse);
+                ModelName = new Google.Cloud.AutoML.V1.ModelName(projectId, locationId, modelId),
+                Payload = new ExamplePayload
+                {
+                    Image = predictionImage
+                }
+            };
+            var predictResponse = await client.PredictAsync(request);
+
+            ByteString audioResult;
+            if (predictResponse.Payload[0].DisplayName == "hotdog")
+            {
+                audioResult = await GetAudioMessageByteString("Yes, that looks like a hot dog");
+            }
+            else
+            {
+                var annotatorClient = await ImageAnnotatorClient.CreateAsync();
+
+                var image = await GetImage(context.Request, "image");
+                var labels = await annotatorClient.DetectLabelsAsync(image);
+
+                var message = "Could not determine what that is.  Try another image.";
+                if (labels.Any())
+                {
+                    message = $"My best guess is that's a {labels.ElementAt(0).Description}";
+                }
+
+                audioResult = await GetAudioMessageByteString(message);
             }
 
-            string responseText = String.Join("<br />", labelResponses.Select(l => l.ToString()));
-            byte[] responseBytes = Encoding.UTF8.GetBytes(responseText);
-            context.Response.ContentType = "text/html";
-            await context.Response.Body.WriteAsync(responseBytes);
 
+            Console.WriteLine("Response Length: {0}", audioResult.Length);
 
-
-            // HttpRequest request = context.Request;
-            // // Check URL parameters for "message" field
-            // string message = request.Query["message"];
-
-            // var client = TextToSpeechClient.Create();
-
-            // // The input to be synthesized, can be provided as text or SSML.
-            // var input = new SynthesisInput
-            // {
-            //     Text = message
-            // };
-
-            // // Build the voice request.
-            // var voiceSelection = new VoiceSelectionParams
-            // {
-            //     LanguageCode = "en-US",
-            //     SsmlGender = SsmlVoiceGender.Female
-            // };
-
-            // // Specify the type of audio file.
-            // var audioConfig = new AudioConfig
-            // {
-            //     AudioEncoding = AudioEncoding.Mp3
-            // };
-
-            // // Perform the text-to-speech request.
-            // var response = client.SynthesizeSpeech(input, voiceSelection, audioConfig);
-            // Console.WriteLine("Response Length: {0}", response.AudioContent.Length);
-
-            // context.Response.ContentType = "audio/mpeg";
-            // context.Response.Headers.Append("Content-Disposition", "filename=\"response.mp3\"");
-            // await context.Response.Body.WriteAsync(response.AudioContent.Memory);
+            context.Response.ContentType = "audio/mpeg";
+            context.Response.Headers.Append("Content-Disposition", "filename=\"response.mp3\"");
+            await context.Response.Body.WriteAsync(audioResult.Memory);
         }
 
-        private async Task<Image> GetImage(HttpRequest request, string imageKey)
+        private async Task<Google.Cloud.Vision.V1.Image> GetImage(HttpRequest request, string imageKey)
         {
             if (request.HasFormContentType && request.Form.Files[imageKey] != null)
             {
                 var formImage = request.Form.Files[imageKey];
                 var imageBytes = await GetFormFileBytes(formImage);
-                return Image.FromBytes(imageBytes);
+                return Google.Cloud.Vision.V1.Image.FromBytes(imageBytes);
 
             }
             else if (request.Query.ContainsKey(imageKey))
             {
-                return Image.FromUri(request.Query[imageKey]);
+                return Google.Cloud.Vision.V1.Image.FromUri(request.Query[imageKey]);
             }
             return null;
         }
 
-        private static async Task<string> GetRequestImageUri(HttpContext context, string fileKey)
+        private async Task<Google.Cloud.AutoML.V1.Image> GetPredictionImage(HttpRequest request, string imageKey)
         {
-            if (context.Request.HasFormContentType && context.Request.Form.Files[fileKey] != null)
+            var imageBytes = await GetImageBytes(request, "image");
+            if (imageBytes == null)
             {
-                var formImage = context.Request.Form.Files[fileKey];
+                return null;
+            }
+            return new Google.Cloud.AutoML.V1.Image
+            {
+                ImageBytes = imageBytes
+            };
+        }
+
+        private async Task<ByteString> GetImageBytes(HttpRequest request, string imageKey)
+        {
+            if (request.HasFormContentType && request.Form.Files[imageKey] != null)
+            {
+                var formImage = request.Form.Files[imageKey];
                 var imageBytes = await GetFormFileBytes(formImage);
-                return $"data:image/jpeg;base64,{Convert.ToBase64String(imageBytes)}";
+                return ByteString.CopyFrom(imageBytes);
 
             }
-            else if (context.Request.Query.ContainsKey(fileKey))
+            else if (request.Query.ContainsKey(imageKey))
             {
-                return context.Request.Query[fileKey];
+                string imageUri = request.Query[imageKey];
+                return await GetByteStringFromFileUri(imageUri);
             }
-
             return null;
+        }
+
+        private static async Task<ByteString> GetByteStringFromFileUri(string imageUri)
+        {
+            using HttpClient c = new HttpClient();
+            using Stream s = await c.GetStreamAsync(imageUri);
+            return await ByteString.FromStreamAsync(s);
         }
 
         private static async Task<byte[]> GetFormFileBytes(IFormFile imageTest)
@@ -130,6 +134,34 @@ namespace DotnetGcf
                 await imageTest.CopyToAsync(stream);
                 return stream.ToArray();
             }
+        }
+
+        private static async Task<ByteString> GetAudioMessageByteString(string message)
+        {
+            var speechClient = TextToSpeechClient.Create();
+
+            // The input to be synthesized, can be provided as text or SSML.
+            var input = new SynthesisInput
+            {
+                Text = message
+            };
+
+            // Build the voice request.
+            var voiceSelection = new VoiceSelectionParams
+            {
+                LanguageCode = "en-US",
+                SsmlGender = SsmlVoiceGender.Female
+            };
+
+            // Specify the type of audio file.
+            var audioConfig = new AudioConfig
+            {
+                AudioEncoding = AudioEncoding.Mp3
+            };
+
+            // Perform the text-to-speech request.
+            var response = await speechClient.SynthesizeSpeechAsync(input, voiceSelection, audioConfig);
+            return response.AudioContent;
         }
     }
 }
