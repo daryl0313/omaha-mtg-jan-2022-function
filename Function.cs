@@ -31,9 +31,11 @@ namespace DotnetGcf
                 return;
             }
 
-            var builder = new ImageAnnotatorClientBuilder();
-            builder.CredentialsPath = "key.json";
-            var client = await builder.BuildAsync();
+            // var builder = new ImageAnnotatorClientBuilder();
+            // builder.CredentialsPath = "key.json";
+            // builder.Endpoint = "https://automl.googleapis.com/v1beta1/projects/922566573636/locations/us-central1/models/ICN6818430044629630976:predict";
+            // var client = await builder.BuildAsync();
+            var client = await ImageAnnotatorClient.CreateAsync();
             var labels = await client.DetectLabelsAsync(image);
 
             Console.WriteLine("Labels (and confidence score):");
