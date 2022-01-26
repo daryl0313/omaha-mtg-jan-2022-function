@@ -15,9 +15,9 @@ namespace DotnetGcf
 {
     public class Function : IHttpFunction
     {
-        private const string projectId = "omaha-mtg-presentation";
+        private const string projectId = "omaha-mtg-presentation-339304";
         private const string locationId = "us-central1";
-        private const string modelId = "ICN6818430044629630976";
+        private const string modelId = "ICN6515615746247098368";
 
         /// <summary>
         /// Logic for your function goes here.
