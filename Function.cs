@@ -30,8 +30,10 @@ namespace DotnetGcf
             var predictionImage = await GetPredictionImage(context.Request, "image");
             if (predictionImage == null)
             {
-                context.Response.StatusCode = 400;
-                await context.Response.WriteAsync("\"image\" is required for this request");
+                // context.Response.StatusCode = 400;
+                // await context.Response.WriteAsync("\"image\" is required for this request");
+                context.Response.ContentType = "text/html";
+                await context.Response.WriteAsync(GetOutputHtml(context));
                 return;
             }
             var client = await PredictionServiceClient.CreateAsync();
@@ -69,9 +71,12 @@ namespace DotnetGcf
 
             Console.WriteLine("Response Length: {0}", audioResult.Length);
 
-            context.Response.ContentType = "audio/mpeg";
-            context.Response.Headers.Append("Content-Disposition", "filename=\"response.mp3\"");
-            await context.Response.Body.WriteAsync(audioResult.Memory);
+            // context.Response.ContentType = "audio/mpeg";
+            // context.Response.Headers.Append("Content-Disposition", "filename=\"response.mp3\"");
+            // await context.Response.Body.WriteAsync(audioResult.Memory);
+
+            context.Response.ContentType = "text/html";
+            await context.Response.WriteAsync(GetOutputHtml(context, predictionImage.ImageBytes, audioResult));
         }
 
         private async Task<Google.Cloud.Vision.V1.Image> GetImage(HttpRequest request, string imageKey)
@@ -162,6 +167,39 @@ namespace DotnetGcf
             // Perform the text-to-speech request.
             var response = await speechClient.SynthesizeSpeechAsync(input, voiceSelection, audioConfig);
             return response.AudioContent;
+        }
+
+        private string GetOutputHtml(HttpContext context, ByteString image = null, ByteString audio = null)
+        {
+            return
+@$"<html>
+  <head><title>Hotdog or Not hotdog</title></head>
+  <body>
+    <form action=""/"" method=""POST"" enctype=""multipart/form-data"">
+      <p>Upload an image to see if it's a Hotdog or Not hotdog.</p>
+      <label>Image:</label>
+      <input type=""file"" name=""image"" accept=""image/png, image/jpeg"" required />
+      <button type=""submit"">Upload</button>
+      </form>
+    <section>
+      {(image == null ? "" : $"<image alt='hotdog or not' src='{GetImageSource(context, image)}' height='300'/>")}
+      <br />
+      {(audio == null ? "" :
+      @$"<audio controls='controls' autobuffer='autobuffer' autoplay='autoplay'>
+          <source src='data:audio/mp3;base64,{audio.ToBase64()}' />
+      </audio>")}
+    </section>
+  </body>
+</html>";
+        }
+
+        private string GetImageSource(HttpContext context, ByteString image)
+        {
+            if (context.Request.Query.ContainsKey("image"))
+            {
+                return context.Request.Query["image"];
+            }
+            return $"data:image/jpeg;base64,{Convert.ToBase64String(image.ToByteArray())}";
         }
     }
 }
