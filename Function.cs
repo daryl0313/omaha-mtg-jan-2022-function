@@ -15,6 +15,10 @@ namespace DotnetGcf
 {
     public class Function : IHttpFunction
     {
+        PredictionServiceClient _predictionServiceClient { get; set; } = PredictionServiceClient.Create();
+        ImageAnnotatorClient _annotatorClient { get; set; } = ImageAnnotatorClient.Create();
+        TextToSpeechClient _speechClient { get; set; } = TextToSpeechClient.Create();
+
         private const string projectId = "omaha-mtg-presentation-339304";
         private const string locationId = "us-central1";
         private const string modelId = "ICN6515615746247098368";
@@ -36,7 +40,7 @@ namespace DotnetGcf
                 await context.Response.WriteAsync(GetOutputHtml(context));
                 return;
             }
-            var client = await PredictionServiceClient.CreateAsync();
+
             PredictRequest request = new PredictRequest
             {
                 ModelName = new Google.Cloud.AutoML.V1.ModelName(projectId, locationId, modelId),
@@ -45,7 +49,7 @@ namespace DotnetGcf
                     Image = predictionImage
                 }
             };
-            var predictResponse = await client.PredictAsync(request);
+            var predictResponse = await _predictionServiceClient.PredictAsync(request);
 
             ByteString audioResult;
             if (predictResponse.Payload[0].DisplayName == "hotdog")
@@ -54,10 +58,9 @@ namespace DotnetGcf
             }
             else
             {
-                var annotatorClient = await ImageAnnotatorClient.CreateAsync();
 
                 var image = await GetImage(context.Request, "image");
-                var labels = await annotatorClient.DetectLabelsAsync(image);
+                var labels = await _annotatorClient.DetectLabelsAsync(image);
 
                 var message = "Could not determine what that is.  Try another image.";
                 if (labels.Any())
@@ -141,10 +144,8 @@ namespace DotnetGcf
             }
         }
 
-        private static async Task<ByteString> GetAudioMessageByteString(string message)
+        private async Task<ByteString> GetAudioMessageByteString(string message)
         {
-            var speechClient = TextToSpeechClient.Create();
-
             // The input to be synthesized, can be provided as text or SSML.
             var input = new SynthesisInput
             {
@@ -165,7 +166,7 @@ namespace DotnetGcf
             };
 
             // Perform the text-to-speech request.
-            var response = await speechClient.SynthesizeSpeechAsync(input, voiceSelection, audioConfig);
+            var response = await _speechClient.SynthesizeSpeechAsync(input, voiceSelection, audioConfig);
             return response.AudioContent;
         }
 
