@@ -175,7 +175,7 @@ namespace DotnetGcf
 @$"<html>
   <head><title>Hotdog or Not hotdog</title></head>
   <body>
-    <form action=""/"" method=""POST"" enctype=""multipart/form-data"">
+    <form action="""" method=""POST"" enctype=""multipart/form-data"">
       <p>Upload an image to see if it's a Hotdog or Not hotdog.</p>
       <label>Image:</label>
       <input type=""file"" name=""image"" accept=""image/png, image/jpeg"" required />
@@ -184,10 +184,7 @@ namespace DotnetGcf
     <section>
       {(image == null ? "" : $"<image alt='hotdog or not' src='{GetImageSource(context, image)}' height='300'/>")}
       <br />
-      {(audio == null ? "" :
-      @$"<audio controls='controls' autobuffer='autobuffer' autoplay='autoplay'>
-          <source src='data:audio/mp3;base64,{audio.ToBase64()}' />
-      </audio>")}
+      {(audio == null ? "" : @$"<audio controls='controls' autobuffer='autobuffer' autoplay='autoplay'><source src='data:audio/mp3;base64,{audio.ToBase64()}' /></audio>")}
     </section>
   </body>
 </html>";
